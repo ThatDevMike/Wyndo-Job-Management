@@ -1,0 +1,176 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap');
+
+:root {
+  --font-instrument: 'DM Sans', system-ui, sans-serif;
+  --font-editorial: 'DM Sans', Georgia, serif;
+  
+  --beige-primary: #F5EFE1;
+  --beige-secondary: #EDE4D0;
+  --beige-accent: #D4C4A0;
+  --ink-primary: #1A1A1A;
+  --ink-secondary: #333333;
+  --ink-muted: #666666;
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  font-family: var(--font-instrument);
+  background-color: var(--beige-primary);
+  color: var(--ink-primary);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--beige-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--ink-muted);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-secondary);
+}
+
+/* Selection */
+::selection {
+  background-color: var(--ink-primary);
+  color: var(--beige-primary);
+}
+
+/* Focus styles */
+*:focus-visible {
+  outline: 2px solid var(--ink-primary);
+  outline-offset: 2px;
+}
+
+/* Smooth transitions */
+a, button {
+  transition: all 0.2s ease;
+}
+
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+/* Input styles */
+input, textarea, select {
+  font-family: inherit;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--ink-muted);
+}
+
+/* Button base */
+.btn {
+  @apply px-6 py-3 font-medium rounded-lg transition-all duration-200;
+}
+
+.btn-primary {
+  @apply bg-ink-900 text-beige-100 hover:bg-ink-700 active:scale-[0.98];
+}
+
+.btn-secondary {
+  @apply bg-beige-300 text-ink-900 hover:bg-beige-400 active:scale-[0.98];
+}
+
+.btn-ghost {
+  @apply bg-transparent text-ink-900 hover:bg-beige-200 active:scale-[0.98];
+}
+
+/* Card styles */
+.card {
+  @apply bg-beige-100 border border-beige-300 rounded-2xl p-6 shadow-sm;
+}
+
+/* Input styles */
+.input {
+  @apply w-full px-4 py-3 bg-beige-100 border border-beige-400 rounded-lg 
+         focus:border-ink-900 focus:ring-1 focus:ring-ink-900 
+         transition-all duration-200 text-ink-900;
+}
+
+.input-label {
+  @apply block text-sm font-medium text-ink-600 mb-2;
+}
+
+/* Animations */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--beige-secondary) 0%,
+    var(--beige-primary) 50%,
+    var(--beige-secondary) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Guide tooltip */
+.guide-tooltip {
+  @apply absolute z-50 bg-ink-900 text-beige-100 px-4 py-3 rounded-xl shadow-xl max-w-xs;
+}
+
+.guide-tooltip::before {
+  content: '';
+  @apply absolute w-3 h-3 bg-ink-900 rotate-45;
+}
+
+.guide-tooltip[data-position="bottom"]::before {
+  @apply -top-1.5 left-1/2 -translate-x-1/2;
+}
+
+.guide-tooltip[data-position="top"]::before {
+  @apply -bottom-1.5 left-1/2 -translate-x-1/2;
+}
+
+.guide-tooltip[data-position="left"]::before {
+  @apply -right-1.5 top-1/2 -translate-y-1/2;
+}
+
+.guide-tooltip[data-position="right"]::before {
+  @apply -left-1.5 top-1/2 -translate-y-1/2;
+}
+
+/* Page transitions */
+.page-enter {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}

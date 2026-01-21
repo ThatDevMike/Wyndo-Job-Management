@@ -1,0 +1,885 @@
+// This is your Prisma schema file for Wyndo
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// AUTHENTICATION & USERS
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  passwordHash  String?   // Null for social login only users
+  name          String?
+  avatar        String?
+  
+  // Subscription & billing
+  subscriptionTier     SubscriptionTier @default(FREE)
+  subscriptionStatus   SubscriptionStatus @default(TRIAL)
+  subscriptionId       String?
+  subscriptionEndsAt   DateTime?
+  trialEndsAt         DateTime?
+  
+  // MFA
+  mfaEnabled          Boolean   @default(false)
+  mfaSecret           String?
+  backupCodes         String[]
+  
+  // Password reset
+  passwordResetTokenHash      String?
+  passwordResetTokenExpiry    DateTime?
+  
+  // Email verification
+  emailVerificationTokenHash   String?
+  emailVerificationTokenExpiry DateTime?
+  
+  // Session management
+  sessions            Session[]
+  devices             Device[]
+  
+  // Team management
+  teamId              String?
+  team                Team?     @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  teamRole            TeamRole? @default(OWNER)
+  
+  // Business profile
+  businessName        String?
+  businessLogo        String?
+  tradeType           String?
+  
+  // Timestamps
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  lastLoginAt         DateTime?
+  deletedAt           DateTime?
+  
+  // Relations
+  customers           Customer[]
+  jobs                Job[]
+  assignedJobs        Job[]     @relation("AssignedJobs")
+  invoices            Invoice[]
+  quotes              Quote[]
+  payments            Payment[]
+  expenses            Expense[]
+  inventoryMovements  InventoryMovement[]
+  assets              Asset[]
+  notes               Note[]
+  auditLogs           AuditLog[]
+  
+  @@index([email])
+  @@index([teamId])
+  @@index([subscriptionTier])
+  @@index([passwordResetTokenHash])
+  @@index([emailVerificationTokenHash])
+  @@map("users")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token        String   @unique
+  refreshToken String   @unique
+  deviceInfo   Json?
+  ipAddress    String?
+  userAgent    String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  lastUsedAt  DateTime @default(now())
+  
+  @@index([userId])
+  @@index([token])
+  @@map("sessions")
+}
+
+model Device {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  deviceId    String
+  platform    String
+  pushToken   String?
+  trusted     Boolean  @default(false)
+  lastUsedAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  
+  @@unique([userId, deviceId])
+  @@index([userId])
+  @@map("devices")
+}
+
+// ============================================
+// TEAMS & PERMISSIONS
+// ============================================
+
+model Team {
+  id              String   @id @default(cuid())
+  name            String
+  subscriptionTier SubscriptionTier @default(FREE)
+  maxMembers      Int      @default(1)
+  
+  users           User[]
+  customers       Customer[]
+  jobs            Job[]
+  invoices        Invoice[]
+  quotes          Quote[]
+  inventory       InventoryItem[]
+  assets          Asset[]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@map("teams")
+}
+
+enum TeamRole {
+  OWNER
+  ADMIN
+  MANAGER
+  WORKER
+}
+
+enum SubscriptionTier {
+  FREE
+  PROFESSIONAL
+  BUSINESS
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+// ============================================
+// CUSTOMERS
+// ============================================
+
+model Customer {
+  id          String   @id @default(cuid())
+  teamId      String?
+  team        Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  name        String
+  email       String?
+  phone       String?
+  mobile      String?
+  
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  county       String?
+  postcode     String?
+  country      String? @default("GB")
+  
+  companyName  String?
+  vatNumber    String?
+  
+  notes        String?
+  tags         String[]
+  
+  status       CustomerStatus @default(ACTIVE)
+  
+  portalAccessEnabled Boolean @default(false)
+  portalPasswordHash  String?
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  lastJobAt    DateTime?
+  deletedAt    DateTime?
+  
+  sites        Site[]
+  jobs         Job[]
+  invoices     Invoice[]
+  quotes       Quote[]
+  payments     Payment[]
+  
+  @@index([userId])
+  @@index([teamId])
+  @@index([email])
+  @@index([postcode])
+  @@map("customers")
+}
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+model Site {
+  id          String   @id @default(cuid())
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  name        String
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  county       String?
+  postcode     String?
+  country      String? @default("GB")
+  
+  accessInstructions String?
+  parkingInfo        String?
+  
+  latitude    Float?
+  longitude   Float?
+  
+  isDefault   Boolean  @default(false)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  jobs        Job[]
+  
+  @@index([customerId])
+  @@map("sites")
+}
+
+// ============================================
+// JOBS & SCHEDULING
+// ============================================
+
+model Job {
+  id          String   @id @default(cuid())
+  teamId      String?
+  team        Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  siteId      String?
+  site        Site?    @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  
+  assignedToId String?
+  assignedTo   User?   @relation("AssignedJobs", fields: [assignedToId], references: [id], onDelete: SetNull)
+  
+  title       String
+  description String?
+  jobType     String?
+  status      JobStatus @default(SCHEDULED)
+  priority    JobPriority @default(NORMAL)
+  
+  scheduledStart DateTime
+  scheduledEnd   DateTime?
+  actualStart    DateTime?
+  actualEnd      DateTime?
+  
+  isRecurring    Boolean @default(false)
+  recurrenceRule String?
+  parentJobId    String?
+  parentJob      Job?    @relation("RecurringJobs", fields: [parentJobId], references: [id])
+  childJobs      Job[]   @relation("RecurringJobs")
+  
+  estimatedValue Float?
+  actualValue    Float?
+  
+  completedAt    DateTime?
+  completionNotes String?
+  photos         String[]
+  
+  signatureData  String?
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  invoiceItems   InvoiceItem[]
+  quoteItems     QuoteItem[]
+  expenses       Expense[]
+  inventoryMovements InventoryMovement[]
+  notes          Note[]
+  
+  @@index([customerId])
+  @@index([teamId])
+  @@index([userId])
+  @@index([assignedToId])
+  @@index([scheduledStart])
+  @@index([status])
+  @@map("jobs")
+}
+
+enum JobStatus {
+  DRAFT
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  ON_HOLD
+}
+
+enum JobPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+// ============================================
+// QUOTES & ESTIMATES
+// ============================================
+
+model Quote {
+  id          String   @id @default(cuid())
+  teamId      String?
+  team        Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  quoteNumber String   @unique
+  title       String
+  description String?
+  
+  status      QuoteStatus @default(DRAFT)
+  version     Int      @default(1)
+  parentQuoteId String?
+  parentQuote Quote?   @relation("QuoteVersions", fields: [parentQuoteId], references: [id])
+  versions    Quote[]  @relation("QuoteVersions")
+  
+  subtotal    Float    @default(0)
+  taxRate     Float    @default(0)
+  taxAmount   Float    @default(0)
+  total       Float    @default(0)
+  
+  validUntil  DateTime?
+  terms       String?
+  
+  signedAt    DateTime?
+  signatureData String?
+  signedByName String?
+  
+  convertedToInvoiceId String? @unique
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  sentAt      DateTime?
+  viewedAt    DateTime?
+  acceptedAt  DateTime?
+  declinedAt  DateTime?
+  
+  items       QuoteItem[]
+  
+  @@index([customerId])
+  @@index([teamId])
+  @@index([userId])
+  @@index([status])
+  @@map("quotes")
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  VIEWED
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+model QuoteItem {
+  id          String   @id @default(cuid())
+  quoteId     String
+  quote       Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  jobId       String?
+  job         Job?     @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  
+  description String
+  quantity    Float    @default(1)
+  unitPrice   Float
+  total       Float
+  
+  isOptional  Boolean  @default(false)
+  isSelected  Boolean  @default(true)
+  
+  sortOrder   Int      @default(0)
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([quoteId])
+  @@map("quote_items")
+}
+
+// ============================================
+// INVOICES
+// ============================================
+
+model Invoice {
+  id          String   @id @default(cuid())
+  teamId      String?
+  team        Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  invoiceNumber String @unique
+  title       String
+  description String?
+  
+  status      InvoiceStatus @default(DRAFT)
+  
+  isConsolidated Boolean @default(false)
+  consolidatedJobIds String[]
+  
+  subtotal    Float    @default(0)
+  taxRate     Float    @default(0)
+  taxAmount   Float    @default(0)
+  total       Float    @default(0)
+  amountPaid  Float    @default(0)
+  amountDue   Float    @default(0)
+  
+  issueDate   DateTime @default(now())
+  dueDate     DateTime
+  paidAt      DateTime?
+  
+  isRecurring Boolean  @default(false)
+  recurrenceRule String?
+  parentInvoiceId String?
+  parentInvoice Invoice? @relation("RecurringInvoices", fields: [parentInvoiceId], references: [id])
+  childInvoices Invoice[] @relation("RecurringInvoices")
+  
+  convertedFromQuoteId String? @unique
+  
+  paymentTerms String?
+  notes        String?
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  sentAt       DateTime?
+  viewedAt     DateTime?
+  reminderSentAt DateTime?
+  
+  items        InvoiceItem[]
+  payments     Payment[]
+  
+  @@index([customerId])
+  @@index([teamId])
+  @@index([userId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("invoices")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  VIEWED
+  PARTIAL
+  PAID
+  OVERDUE
+  CANCELLED
+  REFUNDED
+}
+
+model InvoiceItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  jobId       String?
+  job         Job?     @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  
+  description String
+  quantity    Float    @default(1)
+  unitPrice   Float
+  total       Float
+  
+  sortOrder   Int      @default(0)
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+// ============================================
+// PAYMENTS
+// ============================================
+
+model Payment {
+  id          String   @id @default(cuid())
+  teamId      String?
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  invoiceId   String?
+  invoice     Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  
+  amount      Float
+  method      PaymentMethod
+  status      PaymentStatus @default(PENDING)
+  
+  stripePaymentIntentId String?
+  paypalTransactionId   String?
+  gocardlessMandateId   String?
+  
+  reference   String?
+  notes       String?
+  
+  receiptSentAt DateTime?
+  receiptUrl    String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  processedAt DateTime?
+  
+  @@index([customerId])
+  @@index([invoiceId])
+  @@index([teamId])
+  @@index([status])
+  @@map("payments")
+}
+
+enum PaymentMethod {
+  STRIPE
+  PAYPAL
+  APPLE_PAY
+  GOOGLE_PAY
+  GOCARDLESS
+  BANK_TRANSFER
+  CASH
+  CHEQUE
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+// ============================================
+// EXPENSES & RECEIPTS
+// ============================================
+
+model Expense {
+  id          String   @id @default(cuid())
+  teamId      String?
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId       String?
+  job         Job?     @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  
+  description String
+  category    ExpenseCategory
+  amount      Float
+  taxRate     Float    @default(0)
+  taxAmount   Float    @default(0)
+  
+  receiptUrl  String?
+  receiptOcrData Json?
+  
+  expenseDate DateTime @default(now())
+  
+  supplierName String?
+  
+  mileage    Float?
+  mileageRate Float?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([userId])
+  @@index([teamId])
+  @@index([jobId])
+  @@index([expenseDate])
+  @@map("expenses")
+}
+
+enum ExpenseCategory {
+  MATERIALS
+  FUEL
+  PARKING
+  TOOLS
+  EQUIPMENT
+  TRAINING
+  INSURANCE
+  PHONE
+  OTHER
+}
+
+// ============================================
+// INVENTORY MANAGEMENT
+// ============================================
+
+model InventoryItem {
+  id          String   @id @default(cuid())
+  teamId      String
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  
+  name        String
+  description String?
+  sku         String?  @unique
+  barcode     String?
+  
+  quantity    Float    @default(0)
+  unit        String   @default("unit")
+  minStockLevel Float?
+  
+  costPrice   Float?
+  sellPrice   Float?
+  
+  location    String?
+  
+  supplierName String?
+  supplierSku  String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  movements   InventoryMovement[]
+  
+  @@index([teamId])
+  @@map("inventory_items")
+}
+
+model InventoryMovement {
+  id          String   @id @default(cuid())
+  inventoryItemId String
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  teamId      String?
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId       String?
+  job         Job?     @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  
+  type        InventoryMovementType
+  quantity    Float
+  quantityBefore Float
+  quantityAfter  Float
+  
+  reference   String?
+  notes       String?
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([inventoryItemId])
+  @@index([teamId])
+  @@index([jobId])
+  @@map("inventory_movements")
+}
+
+enum InventoryMovementType {
+  PURCHASE
+  USE
+  TRANSFER
+  ADJUSTMENT
+  WRITE_OFF
+}
+
+// ============================================
+// ASSETS & EQUIPMENT
+// ============================================
+
+model Asset {
+  id          String   @id @default(cuid())
+  teamId      String?
+  team        Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  name        String
+  description String?
+  category    AssetCategory
+  serialNumber String?
+  model       String?
+  manufacturer String?
+  
+  purchaseDate DateTime?
+  purchaseCost  Float?
+  currentValue  Float?
+  
+  location    String?
+  
+  status      AssetStatus @default(ACTIVE)
+  
+  photos      String[]
+  
+  qrCode      String?  @unique
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  maintenanceRecords MaintenanceRecord[]
+  
+  @@index([teamId])
+  @@index([userId])
+  @@map("assets")
+}
+
+enum AssetCategory {
+  TOOL
+  VEHICLE
+  EQUIPMENT
+  MACHINERY
+  ELECTRONICS
+  OTHER
+}
+
+enum AssetStatus {
+  ACTIVE
+  IN_REPAIR
+  RETIRED
+  LOST
+  STOLEN
+}
+
+model MaintenanceRecord {
+  id          String   @id @default(cuid())
+  assetId     String
+  asset       Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  
+  type        MaintenanceType
+  description String
+  cost        Float?
+  
+  servicedBy  String?
+  
+  serviceDate DateTime @default(now())
+  nextServiceDate DateTime?
+  
+  documents   String[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([assetId])
+  @@index([nextServiceDate])
+  @@map("maintenance_records")
+}
+
+enum MaintenanceType {
+  SERVICE
+  REPAIR
+  PAT_TEST
+  CALIBRATION
+  INSPECTION
+  OTHER
+}
+
+// ============================================
+// NOTES & JOURNAL
+// ============================================
+
+model Note {
+  id          String   @id @default(cuid())
+  teamId      String?
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId       String?
+  job         Job?     @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  
+  title       String?
+  content     String
+  type        NoteType @default(QUICK_NOTE)
+  color       String?
+  
+  isPinned    Boolean  @default(false)
+  isArchived  Boolean  @default(false)
+  
+  journalDate DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([userId])
+  @@index([teamId])
+  @@index([jobId])
+  @@index([journalDate])
+  @@map("notes")
+}
+
+enum NoteType {
+  QUICK_NOTE
+  JOURNAL_ENTRY
+  JOB_NOTE
+  CUSTOMER_NOTE
+}
+
+// ============================================
+// SYNC & OFFLINE
+// ============================================
+
+model SyncQueue {
+  id          String   @id @default(cuid())
+  userId      String
+  deviceId    String
+  
+  entityType  String
+  entityId    String
+  operation   SyncOperation
+  data        Json
+  
+  status      SyncStatus @default(PENDING)
+  retryCount  Int      @default(0)
+  errorMessage String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  processedAt DateTime?
+  
+  @@index([userId, deviceId])
+  @@index([status])
+  @@map("sync_queue")
+}
+
+enum SyncOperation {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+enum SyncStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CONFLICT
+}
+
+// ============================================
+// AUDIT LOGS
+// ============================================
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  teamId      String?
+  
+  action      String
+  entityType  String
+  entityId    String
+  
+  changes     Json?
+  
+  ipAddress   String?
+  userAgent   String?
+  deviceId    String?
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([userId])
+  @@index([teamId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
